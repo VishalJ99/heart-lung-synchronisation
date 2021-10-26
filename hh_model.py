@@ -7,12 +7,12 @@ from utils.HH_utils import HH_utils as utils
 
 class HodgkinHuxley_model():
 
-
-	m0 = 0.05
-	n0 = 0.32
-	h0 = 0.6
-	v0 = -65
-	t = np.arange(0.0, 450.0, 0.01)	
+	def __init__(self):
+		self.m0 = 0.05
+		self.n0 = 0.32
+		self.h0 = 0.6
+		self.v0 = -65
+		self.t = np.arange(0.0, 450.0, 0.01)	
 
 	
 	@staticmethod	
