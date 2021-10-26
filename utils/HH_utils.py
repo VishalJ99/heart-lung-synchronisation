@@ -21,13 +21,13 @@ class HH_utils():
 	g_L  =   0.3
 
 	#Sodium (Na) Nernst reversal potentials [mV]
-	V_Na =  50.0
+	E_Na =  50.0
    
 	#Postassium (K) Nernst reversal potentials [mV]
-	V_K  = -77.0
+	E_K  = -77.0
 
 	#Leak Nernst reversal potentials [mV]
-	V_L  = -54.387
+	E_L  = -54.387
 	
 	'''
 	Channel Gating kinetic coefficients
@@ -47,7 +47,7 @@ class HH_utils():
 
 	@staticmethod	
 	def beta_n(voltage):
-		return 0.125*np.exp(-(voltage + 65) / 80	)
+		return 0.125*np.exp(-(voltage + 65) / 80)
 
 	@staticmethod	
 	def alpha_h(voltage):
@@ -59,10 +59,3 @@ class HH_utils():
 
 
 
-
-
-
-if __name__ == '__main__':
-
-
-	pass

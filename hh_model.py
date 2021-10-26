@@ -3,13 +3,10 @@ import scipy as sp
 import pylab as plt
 import numpy as np
 from scipy.integrate import odeint
-from HH_utils import HH_utils as utils
+from utils.HH_utils import HH_utils as utils
 
 class HodgkinHuxley_model():
 
-	'''
-	Starting Paramters 
-	'''
 
 	m0 = 0.05
 	n0 = 0.32
@@ -17,42 +14,29 @@ class HodgkinHuxley_model():
 	v0 = -65
 	t = np.arange(0.0, 450.0, 0.01)	
 
-	'''
-	Membrane Currents (i_element) [uA/cm^2]
-	'''
-
-	#Sodium (Na) 
+	
 	@staticmethod	
-	def i_Na(voltage, m, h):
+	def get_i_Na(voltage, m, h):
+		'''Returns Sodium (Na) Current'''
 
-		conductance = utils.g_Na
-		eqlm_voltage = utils.V_Na
+		return utils.g_Na * (m**3) * h * (voltage	- utils.E_Na) 
 
-		return conductance * (m**3) * h * (voltage	- eqlm_voltage) 
-
-	#Potassium (K)
+	
 	@staticmethod	
-	def i_K(voltage, n):
-		
-		conductance = utils.g_K
-		eqlm_voltage = utils.V_K
+	def get_i_K(voltage, n):
+		'''Returns Potassium Current'''
 
-		return conductance * (n**4) * (voltage - eqlm_voltage)
+		return utils.g_K * (n**4) * (voltage - utils.E_K)
 
-	#Leak (L) 
 	@staticmethod	
-	def i_L(voltage):
+	def get_i_L(voltage):
+		'''Returns Leak Current'''
 
-		conductance	= utils.g_L
-		eqlm_voltage = utils.V_L
-
-		return conductance * (voltage - eqlm_voltage)
+		return utils.g_L * (voltage - utils.E_L)
 
 	@staticmethod
-	def input_current(t):
-		'''
-		For a given time (t) the fn returns the input current
-		'''
+	def get_input_current(t):
+		'''For a given time (t) the fn returns the input current'''
 
 		temp_mag = 10
 
@@ -72,7 +56,7 @@ class HodgkinHuxley_model():
 		mem_C = utils.mem_C	
 
 
-		dVdt = (self.input_current(t) - self.i_Na(v, m, h) - self.i_K(v, n) - self.i_L(v)) / mem_C	
+		dVdt = (self.get_input_current(t) - self.get_i_Na(v, m, h) - self.get_i_K(v, n) - self.get_i_L(v)) / mem_C	
 		dmdt = utils.alpha_m(v) * (1 - m) - utils.beta_m(v)*m
 		dhdt = utils.alpha_h(v) * (1 - h) - utils.beta_h(v)*h
 		dndt = utils.alpha_n(v) * (1 - n) - utils.beta_n(v)*n
@@ -80,12 +64,18 @@ class HodgkinHuxley_model():
 
 		return dVdt, dmdt, dhdt, dndt 
 
+	def get_HH_vars(self):
 
-	def Main(self):
-		
 		init_conditions_list = [self.v0, self.m0, self.h0, self.n0]
 
 		hh_integral_matrix = odeint(self.dAlldt, init_conditions_list, self.t)
+		return hh_integral_matrix
+
+
+
+	def plot_vars(self):
+
+		hh_integral_matrix = self.get_HH_vars()
 
 		#Unpacks the voltage and m,h,n values at each time step
 		v = hh_integral_matrix[:,0]
@@ -93,15 +83,36 @@ class HodgkinHuxley_model():
 		h = hh_integral_matrix[:,2]
 		n = hh_integral_matrix[:,3]
 
-		curr_Na = self.i_Na(v, m ,h)
-		curr_K = self.i_K(v, n)
-		curr_L = self.i_L(v)
+		curr_Na = self.get_i_Na(v, m ,h)
+		curr_K = self.get_i_K(v, n)
+		curr_L = self.get_i_L(v)
 
-		plt.plot(self.t, v, 'k')
+		fig, ax = plt.subplots(5, 1, figsize = (15,35), sharex = True )
+
+		ax[0].plot(self.t, v, color = 'black', label = 'Action potential')
+		ax[0].set_title('Action potential')
+
+		ax[1].set_title('Variable')
+		ax[1].plot(self.t, m, color = 'red', label = 'm variable')
+		ax[1].plot(self.t, h, color = 'blue', label = 'h variable')
+		ax[1].plot(self.t, n, color = 'green', label = 'n variable')
+		ax[1].legend(fontsize = 17)
+
+		ax[2].plot(self.t, curr_Na, color = 'black')
+		ax[2].set_title('Na Current')
+
+		ax[3].plot(self.t, curr_K, color = 'black')
+		ax[3].set_title('K Current')
+		
+		ax[4].plot(self.t, curr_L, color = 'black')
+		ax[4].set_title('Leak Current')
+
+		#plt.savefig('Inital_results.png')
 		plt.show()
 
 
-
 model = HodgkinHuxley_model()
-model.Main()
+model.plot_vars()
 #model.i_Na()	
+
+
