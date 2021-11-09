@@ -12,9 +12,26 @@ class HodgkinHuxley_model():
 		self.n0 = 0.32
 		self.h0 = 0.6
 		self.v0 = -65
-		self.t = np.arange(0.0, 450.0, 0.01)	
+		self.set_time()
+		self.set_curr_bounds()
+		#self.t = np.arange(0.0, 450.0, 0.01)	
 
 	
+
+	def set_time(self, t_resp = 400, n_resps = 2, t_points = 100000):
+		'''Creates an array of time periods'''
+		
+		self.t_resp = t_resp
+		max_t = t_resp*n_resps
+		self.t = np.linspace(0, max_t, t_points )
+
+	def set_curr_bounds(self, i_base = 5, i_max = 10):
+		'''Sets the base and max input current for the currrent step function'''
+
+		self.i_base = i_base
+		self.i_max = i_max
+
+
 	@staticmethod	
 	def get_i_Na(voltage, m, h):
 		'''Returns Sodium (Na) Current'''
@@ -34,14 +51,6 @@ class HodgkinHuxley_model():
 
 		return utils.g_L * (voltage - utils.E_L)
 
-	@staticmethod
-	def get_input_current(t):
-		'''For a given time (t) the fn returns the input current'''
-
-		temp_mag = 10
-
-		return temp_mag*(t>100) - temp_mag*(t>200)
-
 	def dAlldt(self, init_conditions_list, t):
 		'''
 		Input Parameters:
@@ -56,7 +65,7 @@ class HodgkinHuxley_model():
 		mem_C = utils.mem_C	
 
 
-		dVdt = (self.get_input_current(t) - self.get_i_Na(v, m, h) - self.get_i_K(v, n) - self.get_i_L(v)) / mem_C	
+		dVdt = (utils.get_inp_curr(t, self.t_resp, self.i_base, self.i_max) - self.get_i_Na(v, m, h) - self.get_i_K(v, n) - self.get_i_L(v)) / mem_C	
 		dmdt = utils.alpha_m(v) * (1 - m) - utils.beta_m(v)*m
 		dhdt = utils.alpha_h(v) * (1 - h) - utils.beta_h(v)*h
 		dndt = utils.alpha_n(v) * (1 - n) - utils.beta_n(v)*n
@@ -65,54 +74,37 @@ class HodgkinHuxley_model():
 		return dVdt, dmdt, dhdt, dndt 
 
 	def get_HH_vars(self):
+		'''Returns a matrix of all the integrated hh variables'''
 
 		init_conditions_list = [self.v0, self.m0, self.h0, self.n0]
 
 		hh_integral_matrix = odeint(self.dAlldt, init_conditions_list, self.t)
 		return hh_integral_matrix
 
+	def get_curr_vals(self, hh_integral_matrix):
+			'''Returns a matrix of all the currents over time'''
 
+			#Unpacks the voltage and m,h,n values at each time step
+			v = hh_integral_matrix[:,0]
+			m = hh_integral_matrix[:,1]
+			h = hh_integral_matrix[:,2]
+			n = hh_integral_matrix[:,3]
 
-	def plot_vars(self):
+			#Calcs the currents
+			curr_Na = self.get_i_Na(v, m ,h)
+			curr_K = self.get_i_K(v, n)
+			curr_L = self.get_i_L(v)
+			input_curr = [utils.get_inp_curr(time, self.t_resp, self.i_base, self.i_max) for time in self.t]
 
-		hh_integral_matrix = self.get_HH_vars()
+			return curr_Na, curr_K, curr_L, input_curr
 
-		#Unpacks the voltage and m,h,n values at each time step
-		v = hh_integral_matrix[:,0]
-		m = hh_integral_matrix[:,1]
-		h = hh_integral_matrix[:,2]
-		n = hh_integral_matrix[:,3]
-
-		curr_Na = self.get_i_Na(v, m ,h)
-		curr_K = self.get_i_K(v, n)
-		curr_L = self.get_i_L(v)
-
-		fig, ax = plt.subplots(5, 1, figsize = (15,35), sharex = True )
-
-		ax[0].plot(self.t, v, color = 'black', label = 'Action potential')
-		ax[0].set_title('Action potential')
-
-		ax[1].set_title('Variable')
-		ax[1].plot(self.t, m, color = 'red', label = 'm variable')
-		ax[1].plot(self.t, h, color = 'blue', label = 'h variable')
-		ax[1].plot(self.t, n, color = 'green', label = 'n variable')
-		ax[1].legend(fontsize = 17)
-
-		ax[2].plot(self.t, curr_Na, color = 'black')
-		ax[2].set_title('Na Current')
-
-		ax[3].plot(self.t, curr_K, color = 'black')
-		ax[3].set_title('K Current')
-		
-		ax[4].plot(self.t, curr_L, color = 'black')
-		ax[4].set_title('Leak Current')
-
-		#plt.savefig('Inital_results.png')
-		plt.show()
 
 
 model = HodgkinHuxley_model()
-model.plot_vars()
+#model.plot_vars()
+
+# model.set_time(t_resp = 500, n_resps = 10, t_points = 4000)
+# model.plot_vars()
 #model.i_Na()	
 
 
