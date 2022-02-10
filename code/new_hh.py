@@ -17,16 +17,43 @@ class HodgkinHuxleyModel():
 
     Attributes
     ----------
+   
+    C_m : float
+        membrane capacitance (uF/cm^2)
+    
+    g_Na : float
+        maximum sodium channel conductance (mS/cm^2)
+    g_K : float
+        maximum potassium conductances (mS/cm^2)
+    g_L : float
+        maximum leak channel conductances (mS/cm^2)
+    
+    E_Na : float
+        Nernst reversal potential for sodium channel (mV)
+    E_K : float
+        Nernst reversal potential for potassium channel (mV) 
+    E_L : float
+        Nernst reversal potential for leak channel (mV)
+
+    f_base : float
+        Base firing rate of the neuron corresponding to the base current value (mHz)     
+    
     t_resp : float
         period of current (ms?)
     i_base : float
         base value for current
     rsa : float
         rsa value which defines i_max by relation i_max = (1 + rsa) * i_base
+    dc : float
+        Duty cycle of signal
+    
+    t : np.ndarray 
+        Time array 
     t_max : float
         maximum time during which HH equations are being integrated across
     num_time_steps: int 
         defines number of values in time array
+
 
 
     Methods
@@ -45,24 +72,41 @@ class HodgkinHuxleyModel():
     beta_h(V):
         Calculates open to close transition rate for sodium inactivation gating variable at a specific voltage
             
-    I_in(V):
-        Calculates open to close transition rate for sodium activation gating variable at a specific voltage
-    I_Na(V):
-        Calculates open to close transition rate for potassium activation gating variable at a specific voltage
-    I_K(V):
-        Calculates open to close transition rate for sodium inactivation gating variable at a specific voltage
+    I_in(t):
+        Calculates the injected current at time t
+    I_Na(V, m, h):
+        Calculates the sodium channel current at time t 
+    I_K(V, n):
+        Calculates the potassium channel current at time t
     I_L(V):
-        
+        Calculates the leak channel current at time t
 
+      
+    dALLdt(X, t):
+        Calculates values for the HH ODEs at time t
 
-    
-    
-    - forward
-      Integrates HH equations and generates voltage against time lists for action potential 
-        - params : None
-        - returns : list and time (ms?) list. 
+    forward():
+        Integrates the HH ODEs using scipy odeint, returns integrated dictionary with keys = time and values = integrated voltage values.   
     '''
     def __init__(self,t_resp,i_base=2.32,rsa=0.3,dc = 0.5,t_max=1000,num_time_steps=10000 ):
+        """
+        Sets the necessary attributes for the HH neuron
+
+        Parameters
+        ----------
+            t_resp : float
+                period of current (ms)
+            i_base : float
+                base value for current (nA?)
+            rsa : float
+                rsa value which defines i_max by relation i_max = (1 + rsa) * i_base 
+            dc : float 
+                Duty cycle for injected current signal
+            t_max : float
+                maximum time during which HH equations are being integrated across
+            num_time_steps: int 
+                defines number of values in time array
+        """
         # membrane capacitance, in uF/cm^2
         self.C_m = 1.0
         # maximum conductances, in mS/cm^2
@@ -83,7 +127,21 @@ class HodgkinHuxleyModel():
         self.dc = dc
 
     def alpha_m(self, V):
-        """Channel gating kinetics. Functions of membrane voltage"""
+        """        
+        Prints the person's name and age.
+
+        If the argument 'additional' is passed, then it is appended after the main info.
+
+        Parameters
+        ----------
+        additional : str, optional
+            More info to be displayed (default is None)
+
+        Returns
+        -------
+        None
+        
+        """
         V_t = -39.92
         dV = 10
         dVt = 23.39
