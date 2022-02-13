@@ -289,6 +289,7 @@ class HodgkinHuxleyModelPlots(HodgkinHuxleyModel):
     Class for generating various plots
     
     __init__ parameters: 
+    andrew
 
 
     Methods:
