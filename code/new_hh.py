@@ -88,9 +88,17 @@ class HodgkinHuxleyModel():
     forward():
         Integrates the HH ODEs using scipy odeint, returns integrated dictionary with keys = time and values = integrated voltage values.   
     '''
-    def __init__(self,t_resp,i_base=2.32,rsa=0.3,dc = 0.5,t_max=1000,num_time_steps=10000 ):
+    def __init__(self,t_resp,dc,rsa,sigma=0,TDE_var=None,i_base = 2.32,t_max = 1000,num_time_steps=10000):
         """
         Sets the necessary attributes for the HH neuron
+
+        TODO: 
+        Make period of signal time dependant
+        Make DC of signal time dependant
+        Make RSA TDE
+        Update docstring with new variables
+
+        Implement by adding a sigma param which sets amount of variation, set switch param which determines which variable is to be varied, 
 
         Parameters
         ----------
@@ -119,12 +127,19 @@ class HodgkinHuxleyModel():
         self.E_L  = -65
         # set time step array
         self.t = np.linspace(0,t_max,num_time_steps)
-        # properties of respiratory step signal 
+        # properties of respiratory step signal
+        self.cycle_start_t = self.t[0]
         self.t_resp = t_resp
         self.i_base = i_base
         self.f_base = find_firing_freq(i_base) / 10**3 # divide by 10**3 since freq returned in hz and working time unit is ms
         self.rsa = rsa
         self.dc = dc
+        self.sigma = sigma
+        # Check if sigma = 0 , TDE_var set to None, otherwise check TDE_var in {vars}
+        assert TDE_var in ['t_resp','dc','rsa'] if sigma != 0 else TDE_var == None, 'TDE_var set incorrectly, for time dependant signals set sigma to non zero value and TDE_var to: t_resp, dc or rsa'
+        if TDE_var:
+            self.TDE_var = TDE_var
+            self.var_means_dict = {k:v for k,v in zip(['t_resp','dc','rsa'],[self.t_resp,self.dc,self.rsa])}
 
     def alpha_m(self, V):
         """        
@@ -252,11 +267,28 @@ class HodgkinHuxleyModel():
         ''' Returns the current at time t
             Current is modeled of a periodic step function with a duty cycle (dc) 
         '''
-        if (t/self.t_resp)%1 <= self.dc:
+        # TDE signal case
+        if (t - self.cycle_start_t == self.t_resp) and (self.sigma != 0):
+            # if new cycle, resample value for TDE_var
+            self.cycle_start_t = t
+            self.update_TDE_var()
+        
+        # if TIDE then cycle_start_t = 0
+        if ((t-self.cycle_start_t)/self.t_resp) % 1 <= self.dc:
             return self.i_base+self.rsa
         else:
             return self.i_base
-
+            
+    def update_var(self):
+        '''updates TDE_var using a gaussian pdf'''
+        updated_val = np.random.normal(self.var_means_dict[self.TDE_var],self.sigma)
+        if self.TDE_var == 't_resp':
+            self.t_resp = updated_val
+        elif self.TDE_var == 'dc':
+            self.dc = updated_val
+        else:
+            self.rsa = updated_val
+    
     @staticmethod
     def dALLdt(X, t, self):
         """
@@ -289,7 +321,6 @@ class HodgkinHuxleyModelPlots(HodgkinHuxleyModel):
     Class for generating various plots
     
     __init__ parameters: 
-    andrew
 
 
     Methods:
@@ -382,7 +413,10 @@ class HodgkinHuxleyModelPlots(HodgkinHuxleyModel):
         plt.ylabel('$I_{inj}$ (nA)')
         plt.ylim(np.amin(i_inj_values)-1, np.amax(i_inj_values)+1)
         
-
+        data_dict = {k:v for k,v in zip(['time(ms)','voltage(mV)'],[self.t,self.V])}
+        import pandas as pd
+        df = pd.DataFrame(data_dict)
+        df.to_csv('test.csv',index=False)
         if save_fig: plt.savefig(save_fig)
         plt.show()
 
@@ -514,8 +548,6 @@ if __name__ == '__main__':
     t_base = 10**3/find_firing_freq(i_base)
     t_resp = 20*t_base
     HHplots = HodgkinHuxleyModelPlots(t_resp=t_resp,i_base=2.32,rsa=1.2,dc = 0.5,t_max=500)
-    csv_data = [f for f in os.listdir() if f.endswith('csv')]
-    rel_rsa = [1.2,1.5]
     # HHplots.plot_from_csvs(csv_data)
     HHplots.gen_action_potential_plot()
     # HHplots.gen_arnold_tongue_plot_data(steady_state_time=0,rel_rsa_list = rel_rsa)
