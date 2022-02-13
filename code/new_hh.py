@@ -88,17 +88,9 @@ class HodgkinHuxleyModel():
     forward():
         Integrates the HH ODEs using scipy odeint, returns integrated dictionary with keys = time and values = integrated voltage values.   
     '''
-    def __init__(self,t_resp,dc,rsa,sigma=0,TDE_var=None,i_base = 2.32,t_max = 1000,num_time_steps=10000):
+    def __init__(self,t_resp,i_base=2.32,rsa=0.3,dc = 0.5,t_max=1000,num_time_steps=10000 ):
         """
         Sets the necessary attributes for the HH neuron
-
-        TODO: 
-        Make period of signal time dependant
-        Make DC of signal time dependant
-        Make RSA TDE
-        Update docstring with new variables
-
-        Implement by adding a sigma param which sets amount of variation, set switch param which determines which variable is to be varied, 
 
         Parameters
         ----------
@@ -115,6 +107,43 @@ class HodgkinHuxleyModel():
             num_time_steps: int 
                 defines number of values in time array
         """
+        #Initialise a dictionary for the Threshold voltages, in mV
+        self.thresh_v_dict = {
+                        'Na_activation'  : -39.92,
+                        'K_activation'   : -34.58,
+                        'Na_inactivation': -65.37 
+                        }
+        #Initialise a dictionary for the Width of Sigmoidal infinity gating variable 
+        self.gating_width_dict = {
+                        'Na_activation'  : 10,
+                        'K_activation'   : 22.17,
+                        'Na_inactivation': -17.65 
+                        }
+        #Initialise a dictionairy for the Width of sigmoidal Relaxation time (sets time scale of the system)
+        self.relaxation_width_dict = {
+                        'Na_activation'  : 23.39,
+                        'K_activation'   : 23.58,
+                        'Na_inactivation': 27.22 
+                        }
+        #Initialise a dictionary for the baseline relaxation time
+        self.t0_dict    = {
+                        'Na_activation'  : 0.143,
+                        'K_activation'   : 1.291,
+                        'Na_inactivation': 0.701   
+        }
+        #Initialise a dictionary for the height of the relaxation time 
+        self.relaxation_height_dict = {
+                        'Na_activation'  : 1.099,
+                        'K_activation'   : 4.314,
+                        'Na_inactivation': 12.9       
+        }
+        #Initialise a dictionary that relates the gating variables to channels
+        self.gating_var_keys_dict = {
+                        "m" : 'Na_activation',
+                        'n' : 'K_activation',
+                        'h' : 'Na_inactivation'
+        }
+
         # membrane capacitance, in uF/cm^2
         self.C_m = 1.0
         # maximum conductances, in mS/cm^2
@@ -127,123 +156,49 @@ class HodgkinHuxleyModel():
         self.E_L  = -65
         # set time step array
         self.t = np.linspace(0,t_max,num_time_steps)
-        # properties of respiratory step signal
-        self.cycle_start_t = self.t[0]
+        # properties of respiratory step signal 
         self.t_resp = t_resp
         self.i_base = i_base
         self.f_base = find_firing_freq(i_base) / 10**3 # divide by 10**3 since freq returned in hz and working time unit is ms
         self.rsa = rsa
         self.dc = dc
-        self.sigma = sigma
-        # Check if sigma = 0 , TDE_var set to None, otherwise check TDE_var in {vars}
-        assert TDE_var in ['t_resp','dc','rsa'] if sigma != 0 else TDE_var == None, 'TDE_var set incorrectly, for time dependant signals set sigma to non zero value and TDE_var to: t_resp, dc or rsa'
-        if TDE_var:
-            self.TDE_var = TDE_var
-            self.var_means_dict = {k:v for k,v in zip(['t_resp','dc','rsa'],[self.t_resp,self.dc,self.rsa])}
 
-    def alpha_m(self, V):
-        """        
-        Prints the person's name and age.
-
-        If the argument 'additional' is passed, then it is appended after the main info.
+    def get_gating_dt(self, voltage, gating_key, gating_var):
+        '''
+        Gets the partial change in a gating variable for a time dt
 
         Parameters
         ----------
-        additional : str, optional
-            More info to be displayed (default is None)
+        voltage : float
+            Current Membrane voltage
+        gating_key : str
+            The gating variable letter (either n, m or h)
+        gating_var : float
+            The current gating variable value
 
         Returns
         -------
-        None
-        
-        """
-        V_t = -39.92
-        dV = 10
-        dVt = 23.39
-        t0 = 0.143
-        taueps = 1.099
-        
-        thetai = (V - V_t) / dV 
-        thetait = (V - V_t) /dVt
+        The change in the gating variable
+        '''
 
-        tauj = t0 + taueps * (1 - np.tanh(thetait)**2)
+        #Gets the key for the dictionaries of interest
+        key = self.gating_var_keys_dict[gating_key]
         
-        return 0.5*(1 + np.tanh(thetai))/tauj
+        #Calculates the independent variable for the gating variables infinitiy
+        theta_inf = (voltage - self.thresh_v_dict[key]) / self.gating_width_dict[key]
+        #Calculates the independent variable for the relaxation times infinity
+        theta_relaxation = (voltage - self.thresh_v_dict[key]) / self.relaxation_width_dict[key]
 
-    def beta_m(self, V):
-        """Channel gating kinetics. Functions of membrane voltage"""
-        V_t = -39.92
-        dV = 10
-        dVt = 23.39
-        t0 = 0.143
-        taueps = 1.099
-        
-        thetai = (V - V_t) / dV 
-        thetait = (V - V_t) /dVt
+        #Calcalates the relaxation time
+        relaxation_t = self.t0_dict[key] + self.relaxation_height_dict[key] * (1 - np.tanh(theta_relaxation)**2)
 
-        tauj = t0 + taueps * (1 - np.tanh(thetait)**2)
-        
-        return 0.5*(1 - np.tanh(thetai))/tauj
+        #Calculates Alpha
+        alpha = 0.5*(1 + np.tanh(theta_inf)) / relaxation_t
+        #Calculates Beta 
+        beta = 0.5*(1 - np.tanh(theta_inf)) / relaxation_t
 
-    def alpha_h(self, V):
-        """Channel gating kinetics. Functions of membrane voltage"""
-        V_t = -65.37
-        dV = -17.65
-        dVt = 27.22
-        t0 = 0.701
-        taueps = 12.9
-        
-        thetai = (V - V_t) / dV 
-        thetait = (V - V_t) /dVt
+        return  alpha*(1.0-gating_var) - beta*gating_var
 
-        tauj = t0 + taueps * (1 - np.tanh(thetait)**2)
-        
-        return 0.5*(1 + np.tanh(thetai))/tauj
-
-    def beta_h(self, V):
-        """Channel gating kinetics. Functions of membrane voltage"""
-        V_t = -65.37
-        dV = -17.65
-        dVt = 27.22
-        t0 = 0.701
-        taueps = 12.9
-        
-        thetai = (V - V_t) / dV 
-        thetait = (V - V_t) /dVt
-
-        tauj = t0 + taueps * (1 - np.tanh(thetait)**2)
-        
-        return 0.5*(1 - np.tanh(thetai))/tauj
-
-    def alpha_n(self, V):
-        """Channel gating kinetics. Functions of membrane voltage"""
-        V_t = -34.58
-        dV = 22.17
-        dVt = 23.58
-        t0 = 1.291
-        taueps = 4.314
-        
-        thetai = (V - V_t) / dV 
-        thetait = (V - V_t) /dVt
-
-        tauj = t0 + taueps * (1 - np.tanh(thetait)**2)
-        
-        return 0.5*(1 + np.tanh(thetai))/tauj
-
-    def beta_n(self, V):
-        """Channel gating kinetics. Functions of membrane voltage"""
-        V_t = -34.58
-        dV = 22.17
-        dVt = 23.58
-        t0 = 1.291
-        taueps = 4.314
-        
-        thetai = (V - V_t) / dV 
-        thetait = (V - V_t) /dVt
-
-        tauj = t0 + taueps * (1 - np.tanh(thetait)**2)
-        
-        return 0.5*(1 - np.tanh(thetai))/tauj
 
     def I_Na(self, V, m, h):
         """
@@ -267,28 +222,11 @@ class HodgkinHuxleyModel():
         ''' Returns the current at time t
             Current is modeled of a periodic step function with a duty cycle (dc) 
         '''
-        # TDE signal case
-        if (t - self.cycle_start_t == self.t_resp) and (self.sigma != 0):
-            # if new cycle, resample value for TDE_var
-            self.cycle_start_t = t
-            self.update_TDE_var()
-        
-        # if TIDE then cycle_start_t = 0
-        if ((t-self.cycle_start_t)/self.t_resp) % 1 <= self.dc:
+        if (t/self.t_resp)%1 <= self.dc:
             return self.i_base+self.rsa
         else:
             return self.i_base
-            
-    def update_var(self):
-        '''updates TDE_var using a gaussian pdf'''
-        updated_val = np.random.normal(self.var_means_dict[self.TDE_var],self.sigma)
-        if self.TDE_var == 't_resp':
-            self.t_resp = updated_val
-        elif self.TDE_var == 'dc':
-            self.dc = updated_val
-        else:
-            self.rsa = updated_val
-    
+
     @staticmethod
     def dALLdt(X, t, self):
         """
@@ -298,9 +236,11 @@ class HodgkinHuxleyModel():
         V, m, h, n = X
 
         dVdt = (self.I_in(t) - self.I_Na(V, m, h) - self.I_K(V, n) - self.I_L(V)) / self.C_m
-        dmdt = self.alpha_m(V)*(1.0-m) - self.beta_m(V)*m
-        dhdt = self.alpha_h(V)*(1.0-h) - self.beta_h(V)*h
-        dndt = self.alpha_n(V)*(1.0-n) - self.beta_n(V)*n
+
+        dmdt = self.get_gating_dt(voltage = V, gating_key = "m", gating_var = m)
+        dhdt = self.get_gating_dt(voltage = V, gating_key = "h", gating_var = h)
+        dndt = self.get_gating_dt(voltage = V, gating_key = "n", gating_var = n)
+
         return dVdt, dmdt, dhdt, dndt
     
     def forward(self):
@@ -321,6 +261,7 @@ class HodgkinHuxleyModelPlots(HodgkinHuxleyModel):
     Class for generating various plots
     
     __init__ parameters: 
+    andrew
 
 
     Methods:
@@ -360,6 +301,8 @@ class HodgkinHuxleyModelPlots(HodgkinHuxleyModel):
     def gen_action_potential_plot(self, show_gating_and_channel_currs=False, save_fig=False):
         ''' returns a plot of the action potential against time along with the gating variables and injected current
         if plot to be saved, specify savefig argument as the save path string'''
+
+
         # integrate equations
         self.forward()
         ina = self.I_Na(self.V, self.m, self.h)
@@ -373,6 +316,15 @@ class HodgkinHuxleyModelPlots(HodgkinHuxleyModel):
         plt.title('Hodgkin-Huxley Neuron')
         plt.plot(self.t, self.V, 'k')
         plt.ylabel('V (mV)')
+
+        dict_keys = ['time', 'voltage']
+        data_dict = {k: v for k,v in zip(dict_keys,[self.t,self.V])}
+
+        # data_dict['time'].extend(self.t)
+        # data_dict['voltage'].extend(self.V)
+
+        df = pd.DataFrame(data_dict, index = None)
+        df.to_csv('standard_action.csv', index = False)
 
         # plt.subplot(4,1,2)
         # peak_v_indices,_ = find_peaks(self.V,height=0)
@@ -413,10 +365,7 @@ class HodgkinHuxleyModelPlots(HodgkinHuxleyModel):
         plt.ylabel('$I_{inj}$ (nA)')
         plt.ylim(np.amin(i_inj_values)-1, np.amax(i_inj_values)+1)
         
-        data_dict = {k:v for k,v in zip(['time(ms)','voltage(mV)'],[self.t,self.V])}
-        import pandas as pd
-        df = pd.DataFrame(data_dict)
-        df.to_csv('test.csv',index=False)
+
         if save_fig: plt.savefig(save_fig)
         plt.show()
 
@@ -548,6 +497,8 @@ if __name__ == '__main__':
     t_base = 10**3/find_firing_freq(i_base)
     t_resp = 20*t_base
     HHplots = HodgkinHuxleyModelPlots(t_resp=t_resp,i_base=2.32,rsa=1.2,dc = 0.5,t_max=500)
+    csv_data = [f for f in os.listdir() if f.endswith('csv')]
+    rel_rsa = [1.2,1.5]
     # HHplots.plot_from_csvs(csv_data)
     HHplots.gen_action_potential_plot()
     # HHplots.gen_arnold_tongue_plot_data(steady_state_time=0,rel_rsa_list = rel_rsa)
