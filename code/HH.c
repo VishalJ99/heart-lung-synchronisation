@@ -12,23 +12,24 @@ Save current array out
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include<time.h>
 #define PI 3.14159265358979323846
 #define SAFETY 0.9
 #define PGROW -0.2
 #define PSHRNK -0.25
 #define ERRCON 1.89e-4
-#define MAXSTP 1e6
+#define MAXSTP 1e7
 #define FMAX(a,b) (maxarg1=(a),maxarg2=(b),(maxarg1) > (maxarg2) ? (maxarg1) : (maxarg2))
 #define FMIN(a,b) (minarg1=(a),minarg2=(b),(minarg1) < (minarg2) ? (minarg1) : (minarg2))
 #define SIGN(a,b) ((b) >= 0.0 ? fabs(a) : -fabs(a))
-
-double I_in(double );
+double time_spent = 0.0;
+double I_in(double, int );
 void update_TDE_var();
 double randn(double, double);
 void derivs(double, double *, double *);
 void rkck(double *, double *, double, double, double *, double *);
 void rkqs(double *, double *, double *, double, double, double *, double *, double *);
-void odeint(double *, double, double, double, double, double, short, double *);
+void odeint(double *, double, double, double, double, double, short);
 double hs(double);
 double im(double), ih(double), in(double);
 double tde_var_means[3];
@@ -43,15 +44,22 @@ FILE *pf, *pf2;
 
 int main(int argc, char *argv[])
 {
+	// change folder name
+	// figure out f vs I curve
+	// Investigate params
+	// decide of file dir struct
+	// figure out if relaxation makes better results 
+	// figure out hw to save TDE data wo seg error
+
+	
 	// main params: output_dir, sigma, tdeidx, i_base, rel_rsa, dutycycle, t_resp
-	double hstep, hmin, eps, tstart, tend;
-	int i,nI,sflag,saveflag_tde;
-	double *pi;
+	double hstep, hmin, eps, tstart, tend,TModStep,T0;
+	int sflag, NTMod, i, j;
+	clock_t begin = clock();
+
 	// EDIT THIS
 	
 	/* Generating the current profile */
-	nI = 10000;												/* Number of current data points */
-	pi = malloc(nI * sizeof(double));						/* Create array for storing current protocol */
 	
 	neqs = 4;			/* Number of equations in the model */
 	il = 0.23105;		/* Leak current (nA) (all capacitances are 1pF) */
@@ -83,77 +91,90 @@ int main(int argc, char *argv[])
 	Tmod = strtof(argv[7],NULL);		/* Period of respiratory modulation (ms) 10 default */
 	dutycycle = strtof(argv[6],NULL);	/* Duty cycle of respiration */
 	rel_rsa = strtof(argv[5],NULL);			/* Relative amplitude of RSA (Imax - Iinj) / Iinj, where Imax is inhalation current */	
-	tde_var_index = strtof(argv[3],NULL); /* specifies variable  to be set to vary wrt to time: 0 : Tmod, 1: dutycycle, 2: rsa */
+	tde_var_index = strtol(argv[3],NULL,10); /* specifies variable  to be set to vary wrt to time: 0 : Tmod, 1: dutycycle, 2: rsa */
 	// step_var_index = strtof(argv[4],NULL);
-	sigma = strtol(argv[2], NULL, 10);         /* standard dev of variation for random variable tde_var */
-	cycle_start_t = 0.; /* start time for injected current signal */
+	sigma = strtof(argv[2], NULL);         /* standard dev of variation for random variable tde_var */
 	tde_var_means[0] = Tmod; /* defines mean values for variables */
 	tde_var_means[1] = dutycycle;
 	tde_var_means[2] = rel_rsa;
-
-	tstep = 0.1;			/* Time step in current file - ms */
+	
+	sflag = 1;		/* save data */
+	tstart = 0;
+	tend = 2000;
 	hstep = 0.01;			/* Trial step for integration - ms */
 	hmin = 0.0;				/* Smallest value of integration step */
 	dxsav = 0.02;			/* Maximum time interval between saves - ms */
 	eps = 1e-12;			/* Accuracy on solution */
 	kmax = 200000;			/* Maximum number of steps that can be stored */
+	NTMod = 1000;
+	T0 = 40;
+	TModStep = (T0 - T0/16)/ (NTMod - 1);
 	
-	// double t_step = 0.1;
-	// double TModArray[] = 
-	// for (; Tmod <= 2*T0;  )
-	// generate file names
-	char outfilename[100]; 
-	snprintf(outfilename, sizeof outfilename, "/sigma_%lf_tdeIdx_%i_iBase_%lf_relRsa_%lf_dc_%lf_tResp_%lf_.csv", sigma, tde_var_index, Iinj, rel_rsa, dutycycle, Tmod);					/* Output file name */ 
-	char outfile[512];
-	char outfile2[512];
-	// generate save paths
-	strcpy(outfile,argv[1]);
-	strcat(outfile,outfilename);
-	strcpy(outfile2,argv[1]);
-	strcat(outfile2,"/TDE_var.csv");
 	
-	/* Generates the starting values ys by relaxation with constant current injection Iapp */
-	// for (i = 0; i < neqs; i++)  ys[i] = 0.466;
+	for (i=0;i<NTMod;i++)
+		{	
+			printf("start of loop\n");
 
-	/* Generates the current protocol for relaxation */
-	/* for (i = 0; i < nI; i++)  pi[i] = Iinj;  */
+			clock_t begin = clock();
 
-	/* tstart = 0.; */
-	/* tend = tstep * (double)(nI - 1); */
-	/* sflag = 0;	*/	/* do not save data */
 
-	/* odeint(ys, tstart, tend, eps, hstep, hmin, sflag, pi); */
+			char outfilename[256];
+			char outfilename2[256];
 
-	/* Opening the output data file */
-	pf = fopen(outfile, "w+");
-	pf2 = fopen(outfile2,"w+");
+			char outfile[1024];
+			char outfile2[1024];
 
-	/* Generating the current protocol with modulation */
-	for (i = 0; i < nI; i++)
-	{
-		/* pi[i] = ((sin(2 * PI*tstep*i / Tmod) - dutycycle) > 0.) ? Iinj + rsa : Iinj;  */
-		pi[i] = Iinj;
-	}
+			Tmod = T0/16 + i*TModStep;
+			cycle_start_t = 0.; /* start time for injected current signal */
+			// // generate file paths
+			snprintf(outfilename, sizeof outfilename, "/sigma_%lf_tdeIdx_%i_iBase_%lf_relRsa_%lf_dc_%lf_tResp_%lf_tend_%lf.csv", sigma, tde_var_index, Iinj, rel_rsa, dutycycle, Tmod, tend);				 
+			strcpy(outfile,argv[1]);
+			strcat(outfile,outfilename);
+			
+			/*seg fault somewhere here*/
+			// snprintf(outfilename2, sizeof outfilename2,"/TDE_var_tResp_%lf.csv",Tmod);
+			// strcpy(outfile2,argv[1]);
+			// strcat(outfile2,outfilename2);
+		
+			// /* Opening the output data file */
+			if (sflag == 1)
+			{
+				pf = fopen(outfile, "w+");
+				if (sigma !=0) pf2 = fopen(outfile2,"w+");
+			}
+			
+			/* Generates the starting values ys by relaxation with constant current injection Iapp */
+			for (j = 0; j < neqs; j++)  ys[j] = 0.466; //reset ys between run
+			// sflag = 0;		/* do not save data */
+			// odeint(ys, tstart, Tmod*100, eps, hstep, hmin, sflag); 
+			
+			/* Integrate equations */
+			odeint(ys, tstart, tend, eps, hstep, hmin, sflag);
+			clock_t end = clock();
+			time_spent += (double)(end - begin) / CLOCKS_PER_SEC;
+			printf("Finished odeint loop %d, saveflag = %hu: saving to %s\nThe elapsed time is %f seconds\n\n",i, sflag, outfile, time_spent);
 
-	tstart = 0;
-	tend = tstep * (double)(nI - 1);
-	sflag = 1;		/* save data */
-	saveflag_tde = 1;
-	printf("integrating HH eqs with params: %s\n",outfilename);
-	printf("saving csv data to:\n%s",outfile);
-	odeint(ys, tstart, tend, eps, hstep, hmin, sflag, pi);
+			fclose(pf);
+			// fclose(pf2);
 
-	free(pi);
-	fclose(pf);
+ 
+    		// printf("The elapsed time is %f seconds\n \n", time_spent);
+
+
+		}
+	clock_t end = clock();
+	time_spent += (double)(end - begin) / CLOCKS_PER_SEC;
+    // printf("The elapsed time is %f seconds\n", time_spent);
+	
 	return(0);
 }
 
-double I_in(double x)
+double I_in(double x,int saveflag)
 	{
 		if ( (x - cycle_start_t > Tmod) && sigma != 0 ) /* if new cycle and sigma set to non zero value, modify value for tde_var */
 			{
 				cycle_start_t = x;
-				update_TDE_var();
+				update_TDE_var(saveflag);
 			}
 		if (fmod((x-cycle_start_t)/Tmod,1.) <= dutycycle)
 			{	
@@ -166,12 +187,12 @@ double I_in(double x)
 			}
 	}
 
-void update_TDE_var(int saveflag_tde)
+void update_TDE_var(int saveflag)
 	{
 		double updated_val;
 		updated_val = randn(tde_var_means[tde_var_index],sigma); /* generate a new value for tde_var based on a normal distribution */
 		if (updated_val < 0) updated_val = 0;
-		if (saveflag_tde) fprintf(pf2,"%lf\n",updated_val);
+		if (saveflag && sigma !=0) fprintf(pf2,"%lf\n",updated_val);
 		if (tde_var_index == 0) Tmod = updated_val;
 		else if (tde_var_index == 1) dutycycle = updated_val;
 		else rel_rsa = updated_val;
@@ -253,7 +274,7 @@ void derivs(double z, double *yy, double *dyydx)
 }
 
 
-void odeint(double *ystart, double x1, double x2, double eps, double h1, double hmin, short saveflag, double *ptri)
+void odeint(double *ystart, double x1, double x2, double eps, double h1, double hmin, short saveflag)
 {
 	double xsav, x, hnext, hdid, h, aa, bb;
 	double *yscal, *y, *dydx;
@@ -272,17 +293,12 @@ void odeint(double *ystart, double x1, double x2, double eps, double h1, double 
 	for (nstp = 0; nstp<MAXSTP; nstp++)
 	{
 		if (saveflag == 1)
-		{
-			// i = (short)(x / tstep);					/* Calculate the current Iapp at t by linear interpolation of the experimental data */
-			// aa = (ptri[i + 1] - ptri[i]) / tstep;
-			// bb = (i + 1)*ptri[i] - i * ptri[i + 1];
-			// Iapp = aa * x + bb;
-			Iapp = I_in(x);
+		{												/* Current at time x */
+			Iapp = I_in(x,saveflag);
 		}
 		else
 		{
-			// Iapp = ptri[0];
-			Iapp = I_in(0);						/* Initial current used in the relaxation step */
+			Iapp = I_in(0,saveflag);						/* Initial current used in the relaxation step */
 		}
 
 		derivs(x, y, dydx);
@@ -318,7 +334,7 @@ void odeint(double *ystart, double x1, double x2, double eps, double h1, double 
 		}
 		h = hnext;
 	}
-	printf("%s\n", "Too mnay steps in routine odeint");
+	printf("%s\n", "Too many steps in routine odeint");
 	exit(-1);
 }
 
